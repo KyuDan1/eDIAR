@@ -1,0 +1,10 @@
+This repository contains code only; it stores no model weights.
+
+Third-party code included (with its own license):
+- emeans_diar/faiss_e_means/   e-means from facebookresearch/faiss contrib/e_means (commit 7767c6396381c6586aba873fda72eec8d6819b7b), MIT license, (c) Meta Platforms, Inc. and affiliates.
+- emeans_diar/nemotron_ref/    Nemotron-3 Diarization modeling/processing code, Apache License 2.0, (c) The HuggingFace Inc. team.
+- emeans_diar/wespeaker_resnet.py, pooling_layers.py   from WeSpeaker, Apache License 2.0, (c) Shuai Wang et al.
+
+Models used at run time, downloaded from their own repositories and subject to their own licenses:
+- nvidia/Nemotron-3-Diarization (openmdw-1.1)
+- Wespeaker/wespeaker-voxceleb-resnet34-LM

@@ -1,0 +1,9 @@
+torch>=2.1,<2.9
+transformers>=4.57
+huggingface_hub
+numpy
+scipy
+numba
+librosa
+soundfile
+faiss-cpu

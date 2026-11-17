@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live meeting diarization</title>
+<style>
+  :root { color-scheme: dark; }
+  .viz-root {
+    --surface-1: #1a1a19; --surface-2: #222221; --grid: #34332f;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a9990;
+    --s1: #3987e5; --s2: #c98500; --s3: #d55181; --s4: #008300; --none: #8a8984; --accent: #3987e5; --bad: #e66767; --good: #3aa876;
+  }
+  :root[data-theme="light"] .viz-root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --surface-2: #f1f0ec; --grid: #dddcd6;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #6f6e69;
+    --s1: #2a78d6; --s2: #eda100; --s3: #e87ba4; --s4: #008300; --none: #8a8984; --accent: #2a78d6; --bad: #c0392b; --good: #1e8a5a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  .viz-root { background: var(--surface-1); color: var(--text-primary); height: 100vh; min-height: 560px; overflow: hidden; padding: 8px 12px 10px;
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif; display: grid; grid-template-rows: auto minmax(0, 1.3fr) minmax(0, 0.8fr); gap: 8px; }
+  button, select { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--grid); border-radius: 7px; padding: 5px 12px; font: inherit; cursor: pointer; }
+  button:hover, select:hover { border-color: var(--text-muted); } :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 650; min-width: 120px; } button.stop { background: var(--bad); color: #fff; border-color: transparent; font-weight: 650; min-width: 120px; }
+  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .top h1 { font-size: 15px; margin: 0; font-weight: 650; } .muted { color: var(--text-muted); font-size: 12px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--none); margin-right: 5px; } .dot.on { background: var(--good); } .dot.err { background: var(--bad); }
+  .meter { width: 90px; height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; } .meter i { display: block; height: 100%; width: 0; background: var(--good); }
+  .main { display: grid; grid-template-columns: 1.5fr 1fr; gap: 8px; min-height: 0; }
+  .card { background: var(--surface-2); border: 1px solid var(--grid); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+  .card h2 { font-size: 12.5px; font-weight: 650; margin: 0 0 4px; }
+  .cv { position: relative; flex: 1; min-height: 0; background: var(--surface-1); border-radius: 7px; } .cv canvas { position: absolute; left: 0; top: 0; display: block; }
+  .nums { display: flex; gap: 18px; margin: 2px 0 6px; flex-wrap: wrap; } .nums b { font-size: 22px; font-weight: 650; line-height: 1; display: block; } .nums small { color: var(--text-muted); font-size: 11px; }
+  #spk { overflow: auto; flex: 1; min-height: 0; } .row { display: grid; grid-template-columns: 22px 1fr 56px; gap: 6px; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--grid); }
+  .row .nm { cursor: text; font-weight: 600; } .row.now .nm::after { content: " ● 말하는 중"; color: var(--good); font-weight: 500; font-size: 11px; }
+  .bar { height: 7px; background: var(--grid); border-radius: 4px; overflow: hidden; margin-top: 3px; } .bar i { display: block; height: 100%; background: var(--accent); }
+  .row .t { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+  .lat { font-size: 11.5px; color: var(--text-secondary); margin-top: 6px; } .lat b { color: var(--text-primary); }
+  #tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--grid); border-radius: 7px; padding: 4px 8px; font-size: 11.5px; display: none; white-space: nowrap; z-index: 5; }
+  #msg { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 16px; border-radius: 8px; display: none; z-index: 30; max-width: 80vw; }
+  #info { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 20; align-items: center; justify-content: center; }
+  #info .box { background: var(--surface-2); border: 1px solid var(--grid); border-radius: 12px; width: min(820px, 94vw); max-height: 88vh; overflow: auto; padding: 16px 20px; } #info p, #info li { color: var(--text-secondary); font-size: 12.5px; margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="viz-root" id="root">
+  <header class="top">
+    <h1>Live meeting diarization</h1>
+    <button class="primary" id="go">● 시작</button>
+    <label class="muted">지연 모드 <select id="mode"><option value="low_latency">low (1.04 s · 권장)</option><option value="very_low_latency">very low (0.64 s · 덜 정확)</option></select></label>
+    <label class="muted">마이크 <select id="dev" style="max-width:220px"></select></label>
+    <span class="meter" title="입력 레벨"><i id="lvl"></i></span>
+    <span class="muted"><span class="dot" id="dot"></span><span id="stat">대기 중</span></span>
+    <span style="flex:1"></span>
+    <button id="dl" disabled>결과 내려받기</button><button id="infoBtn">ⓘ 설명</button><button id="theme">☾ / ☀</button>
+  </header>
+
+  <section class="main">
+    <div class="card"><h2>화자 임베딩 (2-D PCA) <span class="muted" id="projNote">· 점 = 80 ms 프레임, 큰 마커 = 화자 중심</span></h2>
+      <div class="cv" id="scW"><canvas id="sc"></canvas><div id="tip"></div></div></div>
+    <div class="card"><h2>화자</h2>
+      <div class="nums"><div><b id="nSpk">0</b><small>발견한 화자</small></div><div><b id="nMin">0:00</b><small>경과 시간</small></div><div><b id="nRev">0</b><small>수정된 라벨</small></div></div>
+      <div id="spk"></div>
+      <div class="lat">소리 → 화면까지 평균 지연 <b id="latNow">–</b> (모델 입력 버퍼 <span id="latModel">–</span> 포함, 프레임별 0.3–1.1 s) · 서버 처리 <b id="procNow">–</b>
+        <span id="latWarn" style="color:var(--bad)"></span></div>
+      <div class="muted" style="margin-top:4px">이름을 두 번 클릭하면 바꿀 수 있습니다. 음성은 서버 메모리에서만 처리되고 저장되지 않습니다.</div>
+    </div>
+  </section>
+
+  <section class="card"><h2>타임라인 (최근 60초) <span class="muted">· 막대는 라벨이 수정되면 바로 바뀝니다</span></h2>
+    <div class="cv"><canvas id="tl"></canvas></div></section>
+</div>
+<div id="msg"></div>
+<div id="info" role="dialog" aria-modal="true"><div class="box">
+  <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font-size:15px">설명과 주의사항</h2><button id="infoClose">닫기 ✕</button></div>
+  <p><b>동작</b>: 브라우저 마이크 → (16 kHz) → 서버 → Nemotron-3-Diarization(스트리밍) + 인과적 ResNet 임베딩 + 슬롯 조건부 온라인 e-means → 화자 라벨. 라벨은 처음 나온 뒤 10초 동안 이후 정보로 수정될 수 있습니다(빨간 테두리가 깜빡이는 점).</p>
+  <ul><li>화자 번호(S1, S2…)는 처음 말한 순서와 무관하게 새 사람이 발견될 때 붙습니다. 같은 사람이 다시 말하면 이전 번호로 돌아가도록 하지만 틀릴 수 있습니다.</li>
+  <li>최대 약 8명까지 설계되었고, 회의실 마이크 한 개처럼 멀리서 녹음된 음성에서의 정확도는 측정하지 못했습니다. 말이 겹치거나 짧은 맞장구는 놓치기 쉽습니다.</li>
+  <li>한 번에 한 세션만 사용할 수 있습니다(다른 사람이 쓰는 중이면 “사용 중”으로 표시).</li>
+  <li>이 페이지는 자체 서명 인증서로 HTTPS를 제공합니다. 처음 접속할 때 브라우저의 보안 경고에서 “고급 → 계속 진행”을 눌러야 마이크가 허용됩니다.</li>
+  <li>회의 소리가 스피커로 다시 마이크에 들어가면(에코) 같은 사람이 두 번 잡힐 수 있으니 이어폰을 권합니다.</li></ul>
+</div></div>
+
+<script>
+(() => {
+const root = document.getElementById('root'), el = id => document.getElementById(id);
+const cssv = n => getComputedStyle(root).getPropertyValue(n).trim();
+const SH = ['circle', 'triangle', 'square', 'diamond'];
+const col = i => i < 0 ? cssv('--none') : cssv('--s' + ((i % 4) + 1)), shp = i => SH[i < 0 ? 0 : ((i % 4) + Math.floor(i / 4)) % 4], grp = i => i < 0 ? 0 : Math.floor(i / 4);
+const names = {}, nm = g => names[g] || ('S' + (g + 1));
+function mark(ctx, s, x, y, r, fill, ring) { ctx.beginPath();
+  if (s === 'circle') ctx.arc(x, y, r, 0, 6.2832); else if (s === 'square') ctx.rect(x - r * .88, y - r * .88, r * 1.76, r * 1.76);
+  else if (s === 'triangle') { ctx.moveTo(x, y - r * 1.1); ctx.lineTo(x + r * 1.05, y + r * .85); ctx.lineTo(x - r * 1.05, y + r * .85); ctx.closePath(); }
+  else { ctx.moveTo(x, y - r * 1.2); ctx.lineTo(x + r * 1.2, y); ctx.lineTo(x, y + r * 1.2); ctx.lineTo(x - r * 1.2, y); ctx.closePath(); }
+  ctx.fillStyle = fill; ctx.fill(); if (ring) { ctx.lineWidth = 1.5; ctx.strokeStyle = cssv('--surface-1'); ctx.stroke(); } }
+const HP = {}; function hatch(ctx, g) { const k = g + cssv('--surface-1'); if (HP[k]) return HP[k]; const c = document.createElement('canvas'); c.width = c.height = 8; const x = c.getContext('2d');
+  x.strokeStyle = cssv('--surface-1'); x.globalAlpha = .8; x.lineWidth = 2; x.beginPath(); x.moveTo(0, 8); x.lineTo(8, 0); x.stroke(); if (g > 1) { x.beginPath(); x.moveTo(0, 0); x.lineTo(8, 8); x.stroke(); } return HP[k] = ctx.createPattern(c, 'repeat'); }
+
+// ---------------- state ----------------
+const STEP = 0.08; let frames = new Map(), counts = {}, cent = {}, nrev = 0, tauEnd = 0, flashes = new Map(), startWall = 0, running = false;
+let lastReady = false, ws = null, ctxA = null, node = null, stream = null, sentSamples = 0, sentLog = [], latEma = null, procMs = 0, modelLat = 0, lastMsgWall = 0;
+const SZ = {};
+function fit(id) { const c = el(id), p = c.parentElement, w = p.clientWidth, h = p.clientHeight; if (!w || !h) return; const d = devicePixelRatio || 1;
+  c.style.width = w + 'px'; c.style.height = h + 'px'; c.width = Math.round(w * d); c.height = Math.round(h * d); c.getContext('2d').setTransform(d, 0, 0, d, 0, 0); SZ[id] = { w, h }; }
+const ro = new ResizeObserver(() => { fit('sc'); fit('tl'); }); ro.observe(el('sc').parentElement); ro.observe(el('tl').parentElement);
+function say(t, bad) { const m = el('msg'); m.textContent = t; m.style.display = t ? 'block' : 'none'; if (t) setTimeout(() => { m.style.display = 'none'; }, bad ? 9000 : 4000); }
+function setStat(t, kind) { el('stat').textContent = t; el('dot').className = 'dot ' + (kind || ''); }
+
+// ---------------- messages ----------------
+function addLab(g, d) { counts[g] = (counts[g] || 0) + d; }
+function onUpdate(m) {
+  const now = performance.now(); lastMsgWall = now;
+  for (const [f, x, y, labs, mp] of m.new) { const old = frames.get(f); if (old) old.labs.forEach(g => addLab(g, -1)); frames.set(f, { x, y, labs, mp, t: now }); labs.forEach(g => addLab(g, 1)); }
+  for (const [f, labs] of m.rev) { const o = frames.get(f); if (!o) continue; o.labs.forEach(g => addLab(g, -1)); o.labs = labs; labs.forEach(g => addLab(g, 1)); flashes.set(f, now); nrev++; }
+  if (m.reproj) for (const [f, x, y] of m.reproj) { const o = frames.get(f); if (o) { o.x = x; o.y = y; } }
+  cent = m.cent || cent; tauEnd = m.tau; procMs = m.proc_ms;
+  // end-to-end delay: when was the audio at 'frame_end_t' sent from this browser?
+  const firstEnd = m.new.length ? (m.new[0][0] + 1) * STEP : m.frame_end_t, avgEnd = (firstEnd + m.frame_end_t) / 2;     // average over the frames in this update (the first one waited longest)
+  const sa = avgEnd * 16000; let wall = null;
+  for (let i = 1; i < sentLog.length; i++) if (sentLog[i][0] >= sa) { const a = sentLog[i - 1], b = sentLog[i]; wall = a[1] + (b[1] - a[1]) * ((sa - a[0]) / Math.max(1, b[0] - a[0])); break; }
+  if (wall !== null) { const d = (now - wall) / 1000 + 0.05; latEma = latEma === null ? d : 0.8 * latEma + 0.2 * d; }
+  if (sentLog.length > 4000) sentLog = sentLog.slice(-2000);
+}
+function onMsg(ev) {
+  const m = JSON.parse(ev.data);
+  if (m.type === 'update') onUpdate(m);
+  else if (m.type === 'ready') { lastReady = true; modelLat = m.latency_s; el('latModel').textContent = m.latency_s.toFixed(2) + ' s'; setStat('듣는 중', 'on'); }
+  else if (m.type === 'busy') { say('다른 사람이 사용 중입니다. 잠시 뒤에 다시 시도하세요.', true); stop(true); }
+  else if (m.type === 'error') { say('서버 오류: ' + m.msg, true); }
+  else if (m.type === 'final') { setStat('종료됨', ''); el('dl').disabled = false; }
+}
+
+// ---------------- audio capture ----------------
+const WORKLET = `class P extends AudioWorkletProcessor {
+ constructor(){ super(); this.buf=[]; this.acc=0; this.cnt=0; this.t=0; this.lvl=0; }
+ process(inp){
+  const x = inp[0][0]; if(!x) return true;
+  let s=0; for(let i=0;i<x.length;i++) s+=x[i]*x[i]; this.lvl=Math.max(this.lvl*0.9, Math.sqrt(s/x.length));
+  const r = sampleRate/16000;                       // decimate to 16 kHz by averaging the input samples that fall into each output sample
+  for(let i=0;i<x.length;i++){ this.acc+=x[i]; this.cnt++; this.t+=1; if(this.t>=r-1e-9){ this.buf.push(this.acc/this.cnt); this.acc=0; this.cnt=0; this.t-=r; } }
+  while(this.buf.length>=1600){ const out=new Int16Array(1600); for(let i=0;i<1600;i++){ const v=Math.max(-1,Math.min(1,this.buf[i])); out[i]=v<0?v*32768:v*32767; }
+   this.buf=this.buf.slice(1600); this.port.postMessage({pcm:out.buffer, lvl:this.lvl},[out.buffer]); }
+  return true; } }
+registerProcessor('p', P);`;
+async function listDevices() { try { const d = (await navigator.mediaDevices.enumerateDevices()).filter(x => x.kind === 'audioinput'); const s = el('dev'); s.textContent = '';
+  d.forEach((x, i) => { const o = document.createElement('option'); o.value = x.deviceId; o.textContent = x.label || ('마이크 ' + (i + 1)); s.appendChild(o); }); } catch (e) {} }
+async function start() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { say('이 주소에서는 마이크를 쓸 수 없습니다. https:// 주소로 접속하세요(자체 서명 경고에서 “계속 진행”).', true); return; }
+  lastReady = false; frames = new Map(); counts = {}; cent = {}; nrev = 0; tauEnd = 0; flashes = new Map(); sentSamples = 0; sentLog = []; latEma = null; el('dl').disabled = true;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: el('dev').value ? { exact: el('dev').value } : undefined, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: true } }); }
+  catch (e) { say('마이크를 사용할 수 없습니다: ' + e.name + ' — 브라우저 주소창의 마이크 권한을 확인하세요.', true); return; }
+  listDevices();
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); ws.binaryType = 'arraybuffer'; ws.onmessage = onMsg;
+  ws.onclose = () => { if (running) { setStat('연결이 끊어졌습니다', 'err'); stop(true); } };
+  ws.onerror = () => say('서버에 연결하지 못했습니다.', true);
+  await new Promise(r => { ws.onopen = r; });
+  ws.send(JSON.stringify({ type: 'start', mode: el('mode').value }));
+  ctxA = new AudioContext(); await ctxA.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' })));
+  const src = ctxA.createMediaStreamSource(stream); node = new AudioWorkletNode(ctxA, 'p'); src.connect(node);
+  node.port.onmessage = e => { if (ws && ws.readyState === 1) { ws.send(e.data.pcm); sentSamples += 1600; sentLog.push([sentSamples, performance.now()]); } el('lvl').style.width = Math.min(100, e.data.lvl * 400) + '%'; };
+  running = true; startWall = performance.now(); if (!lastReady) setStat('연결 중…', ''); el('go').textContent = '■ 종료'; el('go').className = 'stop'; el('mode').disabled = true;
+}
+function stop(silent) {
+  running = false; try { if (node) node.disconnect(); if (ctxA) ctxA.close(); if (stream) stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  if (ws && ws.readyState === 1 && !silent) { ws.send(JSON.stringify({ type: 'stop' })); setStat('마무리 중…', ''); setTimeout(() => { try { ws.close(); } catch (e) {} }, 4000); }
+  el('go').textContent = '● 시작'; el('go').className = 'primary'; el('mode').disabled = false; el('lvl').style.width = '0';
+}
+el('go').onclick = () => { if (running) stop(false); else start(); };
+
+// ---------------- drawing ----------------
+const PAD = 16;
+function bounds() { let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; const lo = Math.max(0, tauEnd - 1500);
+  for (let f = lo; f < tauEnd; f++) { const o = frames.get(f); if (o && o.labs.length) { x0 = Math.min(x0, o.x); x1 = Math.max(x1, o.x); y0 = Math.min(y0, o.y); y1 = Math.max(y1, o.y); } }
+  if (x0 > x1) return [-1, 1, -1, 1]; const px = (x1 - x0) * .08 + .02, py = (y1 - y0) * .08 + .02; return [x0 - px, x1 + px, y0 - py, y1 + py]; }
+let hover = null, vis = [];
+function drawScatter() {
+  const S = SZ.sc; if (!S) return; const ctx = el('sc').getContext('2d'), W = S.w, H = S.h, now = performance.now(); ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = cssv('--grid'); ctx.beginPath(); ctx.moveTo(PAD, H - PAD); ctx.lineTo(W - PAD, H - PAD); ctx.moveTo(PAD, PAD); ctx.lineTo(PAD, H - PAD); ctx.stroke();
+  const [x0, x1, y0, y1] = bounds(), X = v => PAD + (v - x0) / (x1 - x0) * (W - 2 * PAD), Y = v => H - PAD - (v - y0) / (y1 - y0) * (H - 2 * PAD); vis = [];
+  if (!tauEnd) { ctx.fillStyle = cssv('--text-muted'); ctx.font = '13px system-ui'; ctx.fillText(running ? '말씀을 시작하세요… (처음 몇 초는 화자를 찾는 중)' : '● 시작을 누르고 마이크를 허용하세요', W / 2 - 150, H / 2); return; }
+  const lo = Math.max(0, tauEnd - 1500);
+  for (let f = lo; f < tauEnd; f++) { const o = frames.get(f); if (!o || !o.labs.length) continue; const g = o.labs[0], age = (now - o.t) / 1000, a = Math.min(1, 0.25 + (f - lo) / 600 + (1 - Math.min(1, age / 3)));
+    ctx.globalAlpha = Math.min(1, a); const r = 3.4 + (age < 0.6 ? (0.6 - age) * 5 : 0); mark(ctx, shp(g), X(o.x), Y(o.y), r, col(g), true); ctx.globalAlpha = 1;
+    const fl = flashes.get(f); if (fl && now - fl < 900) { ctx.beginPath(); ctx.arc(X(o.x), Y(o.y), 8 + (now - fl) / 150, 0, 6.2832); ctx.strokeStyle = cssv('--bad'); ctx.globalAlpha = 1 - (now - fl) / 900; ctx.lineWidth = 1.6; ctx.stroke(); ctx.globalAlpha = 1; }
+    vis.push({ f, x: X(o.x), y: Y(o.y), g }); }
+  for (const g of Object.keys(cent)) { const c = cent[g], x = X(c[0]), y = Y(c[1]); if (x < 0 || y < 0 || x > W || y > H) continue; mark(ctx, shp(+g), x, y, 7.5, col(+g), true);
+    ctx.beginPath(); ctx.arc(x, y, 11, 0, 6.2832); ctx.strokeStyle = cssv('--text-primary'); ctx.lineWidth = 1.8; ctx.stroke();
+    ctx.font = '600 12px system-ui'; ctx.lineWidth = 3.5; ctx.strokeStyle = cssv('--surface-1'); ctx.strokeText(nm(+g), x + 13, y - 9); ctx.fillStyle = cssv('--text-primary'); ctx.fillText(nm(+g), x + 13, y - 9); }
+  if (hover) { const v = vis.find(o => o.f === hover.f); if (v) { ctx.beginPath(); ctx.arc(v.x, v.y, 10, 0, 6.2832); ctx.strokeStyle = cssv('--text-primary'); ctx.lineWidth = 2; ctx.stroke(); } }
+}
+const tip = el('tip'), scW = el('scW');
+scW.addEventListener('pointermove', e => { const r = scW.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; let best = null, bd = 256;
+  for (const o of vis) { const d = (o.x - x) ** 2 + (o.y - y) ** 2; if (d < bd) { bd = d; best = o; } } hover = best;
+  if (best) { tip.style.display = 'block'; tip.style.left = Math.min(x + 12, r.width - 150) + 'px'; tip.style.top = (y + 10) + 'px'; tip.textContent = `${nm(best.g)} · ${(best.f * STEP).toFixed(1)} s`; } else tip.style.display = 'none'; });
+scW.addEventListener('pointerleave', () => { hover = null; tip.style.display = 'none'; });
+
+function drawTimeline() {
+  const S = SZ.tl; if (!S) return; const ctx = el('tl').getContext('2d'), W = S.w, H = S.h; ctx.clearRect(0, 0, W, H);
+  const ids = Object.keys(counts).map(Number).filter(g => counts[g] > 0).sort((a, b) => a - b); const L = 70, T = 60, axis = 16, rowH = Math.min(30, Math.max(14, (H - axis - 4) / Math.max(1, ids.length)));
+  const end = Math.max(T, tauEnd * STEP), t0 = end - T, X = s => L + (s - t0) / T * (W - L - 8);
+  ctx.font = '10.5px system-ui'; ctx.textBaseline = 'middle'; ctx.fillStyle = cssv('--text-muted'); ctx.strokeStyle = cssv('--grid'); ctx.lineWidth = 1;
+  for (let s = Math.ceil(t0 / 10) * 10; s <= end; s += 10) { ctx.beginPath(); ctx.moveTo(X(s), 2); ctx.lineTo(X(s), H - axis); ctx.stroke(); ctx.fillText(Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0'), X(s) - 12, H - 7); }
+  ids.forEach((g, i) => { const y = 4 + i * rowH; ctx.fillStyle = cssv('--text-secondary'); ctx.font = '11.5px system-ui'; ctx.fillText(nm(g), 6, y + rowH / 2);
+    const f0 = Math.max(0, Math.floor(t0 / STEP)), fw = (W - L - 8) / T * STEP + 0.6; ctx.fillStyle = col(g);
+    for (let f = f0; f < tauEnd; f++) { const o = frames.get(f); if (o && o.labs.indexOf(g) >= 0) { ctx.fillStyle = col(g); ctx.fillRect(X(f * STEP), y + 3, fw, rowH - 6); if (grp(g) > 0) { ctx.fillStyle = hatch(ctx, grp(g)); ctx.fillRect(X(f * STEP), y + 3, fw, rowH - 6); } } } });
+  ctx.strokeStyle = cssv('--text-primary'); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X(end), 2); ctx.lineTo(X(end), H - axis); ctx.stroke();
+}
+let lastSpk = '';
+function panel() {
+  const ids = Object.keys(counts).map(Number).filter(g => counts[g] > 0).sort((a, b) => a - b), tot = ids.reduce((a, g) => a + counts[g], 0) || 1;
+  const nowSet = new Set(); for (let f = Math.max(0, tauEnd - 6); f < tauEnd; f++) { const o = frames.get(f); if (o) o.labs.forEach(g => nowSet.add(g)); }
+  const key = ids.map(g => g + ':' + (counts[g] * STEP).toFixed(0) + (nowSet.has(g) ? 'n' : '') + (names[g] || '')).join('|'); el('nSpk').textContent = ids.length; el('nRev').textContent = nrev;
+  const sec = running || tauEnd ? Math.max(tauEnd * STEP, running ? (performance.now() - startWall) / 1000 : 0) : 0; el('nMin').textContent = Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0');
+  el('latNow').textContent = latEma === null ? '–' : latEma.toFixed(2) + ' s'; el('procNow').textContent = procMs ? Math.round(procMs) + ' ms' : '–';
+  el('latWarn').textContent = procMs > modelLat * 1000 ? ' ⚠ 처리가 느려 지연이 늘어날 수 있음' : '';
+  if (key === lastSpk) return; lastSpk = key; const box = el('spk'); box.textContent = '';
+  ids.forEach(g => { const r = document.createElement('div'); r.className = 'row' + (nowSet.has(g) ? ' now' : ''); const c = document.createElement('canvas'); c.width = c.height = 18; c.style.cssText = 'width:18px;height:18px;position:static';
+    mark(c.getContext('2d'), shp(g), 9, 9, 5.5, col(g), false); const mid = document.createElement('div'); const n = document.createElement('div'); n.className = 'nm'; n.textContent = nm(g); n.title = '두 번 클릭해서 이름 바꾸기';
+    n.ondblclick = () => { const v = prompt('이름', nm(g)); if (v) { names[g] = v.slice(0, 20); lastSpk = ''; } }; const b = document.createElement('div'); b.className = 'bar'; const i = document.createElement('i'); i.style.width = (100 * counts[g] / tot) + '%'; b.appendChild(i);
+    mid.appendChild(n); mid.appendChild(b); const t = document.createElement('div'); t.className = 't'; const s = counts[g] * STEP; t.textContent = Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0'); r.appendChild(c); r.appendChild(mid); r.appendChild(t); box.appendChild(r); });
+}
+function frame() { drawScatter(); drawTimeline(); panel(); requestAnimationFrame(frame); }
+
+// ---------------- chrome ----------------
+el('theme').onclick = () => { const h = document.documentElement; h.dataset.theme = h.dataset.theme === 'light' ? 'dark' : 'light'; lastSpk = ''; };
+document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+el('infoBtn').onclick = () => { el('info').style.display = 'flex'; }; el('infoClose').onclick = () => { el('info').style.display = 'none'; }; el('info').onclick = e => { if (e.target === el('info')) el('info').style.display = 'none'; };
+el('dl').onclick = () => { const segs = []; let cur = null; const ids = {};
+  for (let f = 0; f < tauEnd; f++) { const o = frames.get(f); const g = o && o.labs.length ? o.labs[0] : -1; if (cur && cur.g !== g) { segs.push(cur); cur = null; } if (g >= 0 && !cur) cur = { g, s: f * STEP, e: (f + 1) * STEP }; else if (cur) cur.e = (f + 1) * STEP; } if (cur) segs.push(cur);
+  const out = segs.map(s => ({ speaker: nm(s.g), start: +s.s.toFixed(2), end: +s.e.toFixed(2) })); const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ segments: out, talk_seconds: Object.fromEntries(Object.entries(counts).map(([g, c]) => [nm(+g), +(c * STEP).toFixed(1)])) }, null, 1)], { type: 'application/json' })); a.download = 'diarization.json'; a.click(); };
+if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) listDevices();
+if (location.protocol !== 'https:' && !/^(localhost|127\.)/.test(location.hostname)) setStat('주의: https:// 로 접속해야 마이크를 쓸 수 있습니다', 'err');
+fit('sc'); fit('tl'); requestAnimationFrame(frame);
+window.__live = { frames: () => frames, counts: () => counts };
+})();
+</script>
+</body>
+</html>
