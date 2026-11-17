@@ -1,15 +1,24 @@
 # eDIAR: training-free open-speaker streaming diarization for long meetings and large archives
 
-**Training-free.** This repository contains code only and stores no weights. It lifts the speaker limit of a fixed-slot
+**Training-free.** This repository contains the implementation and a precomputed playback demo, but no model weights. It lifts the speaker limit of a fixed-slot
 diarizer ([Nemotron-3 Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization), 8 slots) by clustering speaker
 embeddings (WeSpeaker ResNet34-LM) *inside a slot*, and only after every slot has been used. The clustering engine is the
 official [e-means](https://github.com/facebookresearch/faiss/tree/main/contrib/e_means) algorithm.
 The streaming system re-clusters a bounded 90 s window every chunk, may revise labels for 10 s, and anchors permanent
 speaker ids to the slots of the head.
 
-[Paper](https://arxiv.org/abs/2611.18529) · [Run the live microphone demo](https://github.com/KyuDan1/eDIAR#run-the-original-live-server-locally) · [Precomputed playback demo](https://kyudan1.github.io/eDIAR-exp/)
+[Paper](https://arxiv.org/abs/2611.18529) · [Run the live microphone demo](https://github.com/KyuDan1/eDIAR#run-the-original-live-server-locally) · [Precomputed playback demo](https://kyudan1.github.io/eDIAR/)
 
 ![eDIAR results table](eDIAR_result.png)
+
+## Hosted playback demo
+
+Open the [precomputed playback demo](https://kyudan1.github.io/eDIAR/) to replay five sample conversations and compare diarization results.
+The self-contained page in `docs/index.html` embeds the audio, results, and figures; no GPU or Python server is needed.
+This is precomputed playback, not live microphone inference.
+
+GitHub Pages publishes `main` → `/docs` (Settings → Pages → Deploy from a branch).
+Push changes to `docs/index.html` to update the hosted page. You can also open that file directly in a browser.
 
 ## Live microphone demo — run on your own GPU
 
