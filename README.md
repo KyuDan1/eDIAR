@@ -9,6 +9,8 @@ speaker ids to the slots of the head.
 
 [Paper](https://arxiv.org/abs/2611.18529) · [Run the live microphone demo](https://github.com/KyuDan1/eDIAR#run-the-original-live-server-locally) · [Precomputed playback demo](https://kyudan1.github.io/eDIAR/)
 
+![eDIAR results table](eDIAR_result.png)
+
 ## Live microphone demo — run on your own GPU
 
 The live demo runs on **your own CUDA GPU machine**. Follow the
