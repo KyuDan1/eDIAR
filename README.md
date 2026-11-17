@@ -7,7 +7,7 @@ official [e-means](https://github.com/facebookresearch/faiss/tree/main/contrib/e
 The streaming system re-clusters a bounded 90 s window every chunk, may revise labels for 10 s, and anchors permanent
 speaker ids to the slots of the head.
 
-[Paper](https://arxiv.org/abs/2611.18529) · [Run the live microphone demo](https://github.com/KyuDan1/eDIAR#run-the-original-live-server-locally) · [Precomputed playback demo](https://kyudan1.github.io/eDIAR/)
+[Paper](https://arxiv.org/abs/2611.18529) · [Run the live microphone demo](https://github.com/KyuDan1/eDIAR#run-the-original-live-server-locally) · [Precomputed playback demo](https://kyudan1.github.io/eDIAR-exp/)
 
 ![eDIAR results table](eDIAR_result.png)
 
